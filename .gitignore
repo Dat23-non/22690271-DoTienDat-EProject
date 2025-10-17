@@ -1,0 +1,18 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Env
+.env
+auth/.env
+product/.env
+order/.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage / build (nếu có)
+coverage/
+dist/
