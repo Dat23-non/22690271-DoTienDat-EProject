@@ -7,19 +7,9 @@ on:
     branches: ["main"]
 
 jobs:
-  # ======================
-  # 1️⃣ Continuous Integration
-  # ======================
   test:
     name: Build & Test Microservices
     runs-on: ubuntu-latest
-
-    services:
-      mongodb:
-        image: mongo:6
-        ports:
-          - 27017:27017
-
 
     strategy:
       matrix:
@@ -33,6 +23,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
+
+      # 🚀 Start MongoDB manually
+      - name: 🧱 Start MongoDB manually
+        run: |
+          docker run -d -p 27017:27017 --name mongodb mongo:5
+          sleep 10
+          docker ps -a
 
       - name: ⚙️ Create .env files
         run: |
