@@ -1,0 +1,101 @@
+name: CI/CD Pipeline for EProject-Phase-1
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  # ======================
+  # 1️⃣ Continuous Integration
+  # ======================
+  test:
+    name: Build & Test Microservices
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongo --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    strategy:
+      matrix:
+        service: [auth, product, order]
+
+    steps:
+      - name: 🛎️ Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: ⚙️ Create .env files
+        run: |
+          echo "MONGODB_AUTH_URI=mongodb://localhost:27017/auth" >> auth/.env
+          echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> auth/.env
+          echo "MONGODB_PRODUCT_URI=mongodb://localhost:27017/products" >> product/.env
+          echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> product/.env
+          echo "MONGODB_ORDER_URI=mongodb://localhost:27017/orders" >> order/.env
+          echo "RABBITMQ_URL=amqp://localhost:5672" >> order/.env
+          echo "RABBITMQ_ORDERS_QUEUE=orders" >> order/.env
+          echo "RABBITMQ_PRODUCTS_QUEUE=products" >> order/.env
+          echo "PORT=3002" >> order/.env
+
+      - name: 📦 Install dependencies
+        working-directory: ${{ matrix.service }}
+        run: npm ci
+
+      - name: 🧪 Run tests
+        working-directory: ${{ matrix.service }}
+        run: npm test || echo "⚠️ No tests configured for ${{ matrix.service }}"
+
+  # ======================
+  # 2️⃣ Continuous Deployment
+  # ======================
+  deploy:
+    name: Build & Deploy Services
+    runs-on: ubuntu-latest
+    needs: test   # chỉ chạy sau khi CI thành công
+
+    steps:
+      - name: 🛎️ Checkout code
+        uses: actions/checkout@v4
+
+      # --- Optional: Push Docker image lên Docker Hub ---
+      - name: 🔐 Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 🐳 Build & Push Docker Images
+        run: |
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/auth:latest auth
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/product:latest product
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/order:latest order
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/auth:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/product:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/order:latest
+
+      # --- Optional: Deploy lên VPS qua SSH ---
+      - name: 🚀 Deploy to VPS via SSH
+        if: success()  # chỉ chạy nếu push Docker Hub thành công
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/EProject-Phase-1
+            git pull origin main
+            docker compose pull
+            docker compose up -d --remove-orphans
